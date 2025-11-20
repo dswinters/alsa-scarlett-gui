@@ -9,6 +9,7 @@
 #include "widget-boolean.h"
 #include "window-mixer.h"
 #include "window-routing.h"
+#include "config.h"
 
 // clear all the routing sinks
 static void routing_preset_clear(struct alsa_card *card) {
@@ -690,10 +691,76 @@ static void setup_snk_drag(struct routing_snk *r_snk) {
   g_signal_connect(dest, "leave", G_CALLBACK(snk_drop_leave), r_snk);
 }
 
+static char *get_src_routing_widget_label(const struct routing_src *r_src) {
+  if (!r_src) {
+    printf("no source, cannot get name\n");
+    return g_strdup("");
+  }
+
+  char *custom_label = get_custom_label(r_src->name);
+  if (custom_label != NULL) {
+    return custom_label;
+  }
+
+  if (r_src->port_category == PC_DSP) {
+    // r_src->name is "DSP X"
+    // +4 to skip "DSP "
+    return g_strdup_printf("%s", r_src->name + 4);
+
+  } else if (r_src->port_category == PC_MIX) {
+    // r_src->name is "Mix X"
+    // +4 to skip "Mix "
+    return g_strdup_printf("%s", r_src->name + 4);
+
+  } else if (r_src->port_category == PC_PCM) {
+
+    return g_strdup_printf("PCM %d", r_src->lr_num);
+
+  } else if (r_src->port_category == PC_HW) {
+    return g_strdup_printf(
+      "%s %d",
+      hw_type_names[r_src->hw_type],
+      r_src->lr_num
+    );
+
+  } else {
+    printf("invalid port category %d\n", r_src->port_category);
+    return g_strdup("");
+  }
+}
+
+static char *get_snk_routing_widget_label(const struct alsa_elem *elem) {
+  if (!elem) {
+    printf("no alsa element, cannot get name\n");
+    return g_strdup("");
+  }
+
+  char *custom_label = get_custom_label(elem->name);
+  if (custom_label != NULL) {
+    return custom_label;
+  }
+
+  if (elem->port_category == PC_DSP) {
+    return g_strdup_printf("%d", elem->lr_num);
+
+  } else if (elem->port_category == PC_MIX) {
+    return g_strdup_printf("%d", elem->lr_num);
+
+  } else if (elem->port_category == PC_PCM) {
+    return g_strdup_printf("PCM %d", elem->lr_num);
+
+  } else if (elem->port_category == PC_HW) {
+    return g_strdup_printf("%s %d", hw_type_names[elem->hw_type], elem->lr_num);
+
+  } else {
+    printf("invalid port category %d\n", elem->port_category);
+    return g_strdup("");
+  }
+}
+
 static void make_src_routing_widget(
   struct alsa_card   *card,
   struct routing_src *r_src,
-  char               *name,
   GtkOrientation      orientation
 ) {
 
@@ -702,6 +769,7 @@ static void make_src_routing_widget(
   GtkWidget *socket = r_src->widget2 = make_socket_widget();
 
   g_object_set_data(G_OBJECT(box), "routing_src", r_src);
+  char *name = get_src_routing_widget_label(r_src);
 
   // create label for mixer inputs (length > 1) and mixer outputs if
   // not talkback (talkback has a button outside the box instead of a
@@ -741,6 +809,10 @@ static void make_src_routing_widget(
 
   // handle dragging to or from the box
   setup_src_drag(r_src);
+
+  // cleanup
+  g_free(name);
+
 }
 
 static GtkWidget *make_talkback_mix_widget(
@@ -759,11 +831,11 @@ static GtkWidget *make_talkback_mix_widget(
 
 static void make_snk_routing_widget(
   struct routing_snk *r_snk,
-  char               *name,
   GtkOrientation      orientation
 ) {
 
   struct alsa_elem *elem = r_snk->elem;
+  char *name = get_snk_routing_widget_label(elem);
 
   // create a box, a "socket", and a label
   GtkWidget *box = r_snk->box_widget = gtk_box_new(orientation, 5);
@@ -800,6 +872,10 @@ static void make_snk_routing_widget(
 
   // handle dragging to or from the box
   setup_snk_drag(r_snk);
+
+  // cleanup
+  g_free(name);
+
 }
 
 static void routing_updated(struct alsa_elem *elem, void *data) {
@@ -817,10 +893,7 @@ static void make_routing_alsa_elem(struct routing_snk *r_snk) {
   // the top, in card->routing_mixer_in_grid
   if (elem->port_category == PC_DSP) {
 
-    char name[10];
-
-    snprintf(name, 10, "%d", elem->lr_num);
-    make_snk_routing_widget(r_snk, name, GTK_ORIENTATION_VERTICAL);
+    make_snk_routing_widget(r_snk, GTK_ORIENTATION_VERTICAL);
     gtk_grid_attach(
       GTK_GRID(card->routing_dsp_in_grid), r_snk->box_widget,
       elem->port_num + 1, 0, 1, 1
@@ -833,10 +906,7 @@ static void make_routing_alsa_elem(struct routing_snk *r_snk) {
     if (card->has_fixed_mixer_inputs)
       return;
 
-    char name[10];
-
-    snprintf(name, 10, "%d", elem->lr_num);
-    make_snk_routing_widget(r_snk, name, GTK_ORIENTATION_VERTICAL);
+    make_snk_routing_widget(r_snk, GTK_ORIENTATION_VERTICAL);
     gtk_grid_attach(
       GTK_GRID(card->routing_mixer_in_grid), r_snk->box_widget,
       elem->port_num + 1, 0, 1, 1
@@ -845,10 +915,8 @@ static void make_routing_alsa_elem(struct routing_snk *r_snk) {
   // "PCM X Capture Enum" controls (PCM Inputs) go along the right,
   // in card->routing_pcm_out_grid
   } else if (elem->port_category == PC_PCM) {
-    char *name = g_strdup_printf("PCM %d", elem->lr_num);
-    make_snk_routing_widget(r_snk, name, GTK_ORIENTATION_HORIZONTAL);
-    g_free(name);
 
+    make_snk_routing_widget(r_snk, GTK_ORIENTATION_HORIZONTAL);
     gtk_grid_attach(
       GTK_GRID(card->routing_pcm_out_grid), r_snk->box_widget,
       0, elem->port_num + 1, 1, 1
@@ -858,12 +926,7 @@ static void make_routing_alsa_elem(struct routing_snk *r_snk) {
   // card->routing_hw_out_grid
   } else if (elem->port_category == PC_HW) {
 
-    char *name = g_strdup_printf(
-      "%s %d", hw_type_names[elem->hw_type], elem->lr_num
-    );
-    make_snk_routing_widget(r_snk, name, GTK_ORIENTATION_HORIZONTAL);
-    g_free(name);
-
+    make_snk_routing_widget(r_snk, GTK_ORIENTATION_HORIZONTAL);
     gtk_grid_attach(
       GTK_GRID(card->routing_hw_out_grid), r_snk->box_widget,
       0, elem->port_num + 1, 1, 1
@@ -903,7 +966,7 @@ static void add_routing_widgets(
       // r_src->name is "DSP X"
       // +4 to skip "DSP "
       make_src_routing_widget(
-        card, r_src, r_src->name + 4, GTK_ORIENTATION_VERTICAL
+        card, r_src, GTK_ORIENTATION_VERTICAL
       );
       gtk_grid_attach(
         GTK_GRID(card->routing_dsp_out_grid), r_src->widget,
@@ -914,7 +977,7 @@ static void add_routing_widgets(
       // r_src->name is "Mix X"
       // +4 to skip "Mix "
       make_src_routing_widget(
-        card, r_src, r_src->name + 4, GTK_ORIENTATION_VERTICAL
+        card, r_src, GTK_ORIENTATION_VERTICAL
       );
       gtk_grid_attach(
         GTK_GRID(card->routing_mixer_out_grid), r_src->widget,
@@ -930,25 +993,17 @@ static void add_routing_widgets(
         );
       }
     } else if (r_src->port_category == PC_PCM) {
-      char *name = g_strdup_printf("PCM %d", r_src->lr_num);
       make_src_routing_widget(
-        card, r_src, name, GTK_ORIENTATION_HORIZONTAL
+        card, r_src, GTK_ORIENTATION_HORIZONTAL
       );
-      g_free(name);
       gtk_grid_attach(
         GTK_GRID(card->routing_pcm_in_grid), r_src->widget,
         0, r_src->port_num + 1, 1, 1
       );
     } else if (r_src->port_category == PC_HW) {
-      char *name = g_strdup_printf(
-        "%s %d",
-        hw_type_names[r_src->hw_type],
-        r_src->lr_num
-      );
       make_src_routing_widget(
-        card, r_src, name, GTK_ORIENTATION_HORIZONTAL
+        card, r_src, GTK_ORIENTATION_HORIZONTAL
       );
-      g_free(name);
       gtk_grid_attach(
         GTK_GRID(card->routing_hw_in_grid), r_src->widget,
         0, r_src->port_num + 1, 1, 1

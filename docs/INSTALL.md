@@ -113,7 +113,7 @@ sudo zypper in git alsa-devel gtk4-devel libopenssl-devel
 On Ubuntu:
 
 ```
-sudo apt -y install git make gcc libgtk-4-dev libasound2-dev libssl-dev
+sudo apt -y install git make gcc libgtk-4-dev libasound2-dev libssl-dev libjson-glib-dev
 ```
 
 On Arch:

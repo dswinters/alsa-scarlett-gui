@@ -5,6 +5,7 @@
 #include "alsa-sim.h"
 #include "main.h"
 #include "menu.h"
+#include "config.h"
 #include "scarlett2-firmware.h"
 #include "window-hardware.h"
 #include "window-iface.h"
@@ -62,9 +63,11 @@ static void open_cb(
 }
 
 int main(int argc, char **argv) {
+  struct config *config = load_config();
   app = gtk_application_new(
     "vu.b4.alsa-scarlett-gui", G_APPLICATION_HANDLES_OPEN
   );
+  g_object_set_data_full(G_OBJECT(app), "config", config, (GDestroyNotify)free_config);
   g_signal_connect(app, "startup", G_CALLBACK(startup), NULL);
   g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
   g_signal_connect(app, "open", G_CALLBACK(open_cb), NULL);
